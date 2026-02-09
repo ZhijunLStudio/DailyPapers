@@ -1,0 +1,29 @@
+# Zotero 配置
+# 获取 API Key: https://www.zotero.org/settings/keys
+# 获取 Library ID: https://www.zotero.org/settings/keys (页面上的 "Your userID for use in API calls")
+zotero:
+  library_id: 'YOUR_LIBRARY_ID'
+  library_type: 'user'  # 'user' 或 'group'
+  api_key: 'YOUR_ZOTERO_API_KEY'
+  collection_id: ''  # 可选：指定一个 Collection ID 来存放论文
+
+# OpenAI 配置
+# 支持 OpenAI API 或兼容的第三方 API
+openai:
+  api_key: 'YOUR_OPENAI_API_KEY'
+  base_url: 'https://api.openai.com/v1'  # 第三方 API 请修改此处
+  model: 'gpt-4'  # 建议使用长上下文模型
+
+# 本地存储配置
+local_storage:
+  base_dir: '/path/to/your/papers'  # 论文本地存储路径
+
+# 筛选偏好 (用于 AI Prompt)
+# 用自然语言描述你的研究兴趣和想过滤的方向
+preferences:
+  interest: >
+    例如：Large Language Models, Multimodal Learning, 
+    Computer Vision, Reinforcement Learning...
+  ignore: >
+    例如：Pure Text-to-Image generation, Audio/Music generation,
+    unless related to fundamental understanding...

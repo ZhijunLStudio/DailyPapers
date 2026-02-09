@@ -1,0 +1,7 @@
+pyzotero
+openai
+requests
+beautifulsoup4
+pyyaml
+arxiv
+tqdm

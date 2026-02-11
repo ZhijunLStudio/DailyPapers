@@ -13,10 +13,50 @@ openai:
   api_key: 'YOUR_OPENAI_API_KEY'
   base_url: 'https://api.openai.com/v1'  # 第三方 API 请修改此处
   model: 'gpt-4'  # 建议使用长上下文模型
+  timeout: 60  # LLM请求超时时间（秒）
+  max_retries: 3  # LLM请求重试次数
+  retry_delay: 5  # 重试间隔（秒）
+
+# DeepSeek OCR 配置（用于论文深度分析）
+deepseek_ocr:
+  api_key: 'YOUR_DEEPSEEK_API_KEY'
+  base_url: 'https://api.deepseek.com/v1'  # 或其他兼容的OCR服务地址
+  model: 'deepseek-ocr'
+  timeout: 120  # OCR请求超时时间（秒）
+  max_retries: 3  # OCR请求重试次数
+  retry_delay: 5  # 重试间隔（秒）
 
 # 本地存储配置
 local_storage:
   base_dir: '/path/to/your/papers'  # 论文本地存储路径
+
+# 深度分析配置
+analysis:
+  # PDF转图片的分辨率，越高越清晰但处理越慢
+  pdf_dpi: 200
+  # 每篇论文最多处理多少页（防止太长论文占用过多资源）
+  max_pages: 15
+  # 是否保存OCR可视化结果
+  save_visualization: true
+  # 是否保存裁剪的图表
+  save_cropped_figures: true
+  # OCR文本最大长度（字符数）
+  max_ocr_text_length: 12000
+  # 每篇论文最多选择多少张图表放入报告
+  max_figures_per_paper: 4
+  # 日报中最多展示多少张图表
+  max_figures_in_daily: 6
+
+# 并发配置
+concurrency:
+  # 同时处理多少篇论文（深度分析）
+  paper_workers: 2
+  # 单篇论文内OCR并发数（同时处理多少页）
+  ocr_workers: 3
+  # arXiv元数据获取批次大小
+  arxiv_chunk_size: 10
+  # arXiv请求间隔（秒）
+  arxiv_delay: 3
 
 # 筛选偏好 (用于 AI Prompt)
 # 用自然语言描述你的研究兴趣和想过滤的方向

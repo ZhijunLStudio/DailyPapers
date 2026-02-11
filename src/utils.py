@@ -31,32 +31,54 @@ def download_pdf(arxiv_id, save_path):
         print(f"下载异常 {arxiv_id}: {e}")
     return False
 
-def get_arxiv_metadata(arxiv_ids, chunk_size=20):
-    """批量获取 arxiv 元数据，分批处理防止 URL 过长"""
+def get_arxiv_metadata(arxiv_ids, chunk_size=10, delay=3):
+    """批量获取 arxiv 元数据，分批处理防止 URL 过长和限流"""
     results = {}
     
-    # 将列表切片，每次查 chunk_size 个
+    # 将列表切片，每次查 chunk_size 个（减小批次大小）
     for i in range(0, len(arxiv_ids), chunk_size):
         chunk = arxiv_ids[i:i + chunk_size]
-        print(f"正在获取 Arxiv 元数据 ({i+1}/{len(arxiv_ids)})...")
+        print(f"正在获取 Arxiv 元数据 ({i+1}-{min(i+chunk_size, len(arxiv_ids))}/{len(arxiv_ids)})...")
         
-        try:
-            search = arxiv.Search(id_list=chunk)
-            for r in search.results():
-                # 获取 ID 的纯数字部分 (去除 v1, v2)
-                clean_id = r.get_short_id().split('v')[0]
-                results[clean_id] = {
-                    'title': r.title,
-                    'authors': [a.name for a in r.authors],
-                    'summary': r.summary.replace('\n', ' '), # 摘要去换行
-                    'published': r.published,
-                    'pdf_url': r.pdf_url,
-                    'arxiv_id': clean_id
-                }
-            # 礼貌性延时，防止请求过快
-            time.sleep(1) 
-            
-        except Exception as e:
-            print(f"获取元数据批次失败: {e}")
-            
+        max_retries = 5  # 增加重试次数
+        for attempt in range(max_retries):
+            try:
+                # 第一批之前先等待，避免初始请求过快
+                if i == 0 and attempt == 0:
+                    time.sleep(5)
+                elif i > 0 or attempt > 0:
+                    # 递增延迟：基础延迟 + 重试次数 * 5秒
+                    wait_time = delay + (attempt * 5)
+                    print(f"  等待 {wait_time} 秒...")
+                    time.sleep(wait_time)
+                
+                search = arxiv.Search(id_list=chunk)
+                for r in search.results():
+                    # 获取 ID 的纯数字部分 (去除 v1, v2)
+                    clean_id = r.get_short_id().split('v')[0]
+                    results[clean_id] = {
+                        'title': r.title,
+                        'authors': [a.name for a in r.authors],
+                        'summary': r.summary.replace('\n', ' '), # 摘要去换行
+                        'published': r.published,
+                        'pdf_url': r.pdf_url,
+                        'arxiv_id': clean_id
+                    }
+                print(f"  ✓ 批次成功，获取 {len(chunk)} 篇")
+                break  # 成功则跳出重试循环
+                
+            except Exception as e:
+                error_msg = str(e)
+                if "429" in error_msg and attempt < max_retries - 1:
+                    wait_time = (attempt + 2) * 10  # 更长的递增等待：10, 20, 30, 40秒
+                    print(f"  ⚠️ 遇到限流(429)，等待 {wait_time} 秒后重试 ({attempt+1}/{max_retries})...")
+                    time.sleep(wait_time)
+                else:
+                    print(f"  ❌ 获取元数据批次失败: {e}")
+                    if attempt < max_retries - 1:
+                        time.sleep(5)
+                    else:
+                        break
+    
+    print(f"成功获取 {len(results)}/{len(arxiv_ids)} 篇论文元数据")
     return results

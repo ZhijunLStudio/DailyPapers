@@ -11,6 +11,12 @@ client = OpenAI(
     base_url=config['openai']['base_url']
 )
 
+# 从配置读取LLM参数
+openai_config = config.get('openai', {})
+llm_timeout = openai_config.get('timeout', 60)
+llm_max_retries = openai_config.get('max_retries', 3)
+llm_retry_delay = openai_config.get('retry_delay', 5)
+
 
 
 def analyze_paper_with_structure(title, abstract, zotero_structure):
@@ -63,74 +69,97 @@ def analyze_paper_with_structure(title, abstract, zotero_structure):
     }}
     """
     
-    retries = 3
-    for i in range(retries):
+    for i in range(llm_max_retries):
         try:
             response = client.chat.completions.create(
                 model=config['openai']['model'],
                 messages=[{"role": "user", "content": prompt}],
                 response_format={"type": "json_object"},
-                timeout=30
+                timeout=llm_timeout
             )
             return json.loads(response.choices[0].message.content)
         except Exception as e:
-            if i == retries - 1:
-                print(f"LLM Analyze Error: {e}")
+            print(f"  LLM分析尝试 {i+1}/{llm_max_retries} 失败: {e}")
+            if i == llm_max_retries - 1:
+                print(f"  LLM Analyze Error: {e}")
                 return {"interested": False}
-            time.sleep(2)
+            time.sleep(llm_retry_delay)
 
 def generate_reading_note(title, authors, abstract, analysis_data):
     """
     生成详细中文笔记，使用用户指定的高质量模板
     """
-    # 你的高质量模板
     note_template = """
-    ### **科研论文读书笔记模板**
+    ### 科研论文读书笔记
 
-    **论文标题:** {Title}
-    **作者:** {Authors}
-    **年份/出处:** arXiv (根据内容推测)
+    **论文标题**: {Title}
+    **作者**: {Authors}
+    **年份/出处**: arXiv
     
-    **标签:** {Tags} (生成的标签)
+    **标签**: {Tags}
 
     ---
 
-    #### **1. 核心问题 (Problem Statement)**
-    *   **研究背景 (Context):** 这篇论文是在什么样的大背景下出现的？当前领域存在哪些普遍的挑战或局限性？
-    *   **具体问题 (The Gap):** 论文明确要解决的那个**具体**、**未被满足**的需求或技术空白是什么？
+    #### 1. 核心问题
+
+    **研究背景**
+    这篇论文是在什么样的大背景下出现的？当前领域存在哪些普遍的挑战或局限性？
+
+    **具体问题**
+    论文明确要解决的那个具体、未被满足的需求或技术空白是什么？
 
     ---
 
-    #### **2. 核心思想/贡献 (Core Idea / Contribution)**
-    *   **一句话总结 (Elevator Pitch):** 如果只能用一句话向别人介绍这篇论文，它是什么？
-    *   **核心贡献 (Key Contributions):** 论文提出了哪些主要的、新颖的东西？(分点列出：新方法/新理论/新数据集/实验发现)
+    #### 2. 核心思想与贡献
+
+    **一句话总结**
+    如果只能用一句话向别人介绍这篇论文，它是什么？
+
+    **核心贡献**
+    论文提出了哪些主要的、新颖的东西？分点列出：新方法、新理论、新数据集、实验发现。
 
     ---
 
-    #### **3. 方法详述 (Methodology)**
-    *   **整体架构 (Overall Architecture):** 论文提出的方法由哪几个关键部分组成？
-    *   **关键技术点 (Key Technical Details):** 深入剖析最核心、最创新的技术细节。(例如：模块A是如何工作的？训练策略有什么特别之处？)
+    #### 3. 方法详述
+
+    **整体架构**
+    论文提出的方法由哪几个关键部分组成？
+
+    **关键技术点**
+    深入剖析最核心、最创新的技术细节。例如：模块是如何工作的？训练策略有什么特别之处？
 
     ---
 
-    #### **4. 实验与结果 (Experiments & Results)**
-    *   **实验设置 (Setup):** 数据集、评估指标、基线模型。
-    *   **核心结果 (Main Results):** 主要指标表现如何？SOTA？
-    *   **消融实验 (Ablation Study):** 证明了哪个模块是有效的？
+    #### 4. 实验与结果
+
+    **实验设置**
+    数据集、评估指标、基线模型。
+
+    **核心结果**
+    主要指标表现如何？是否达到 SOTA？
+
+    **消融实验**
+    证明了哪个模块是有效的？
 
     ---
 
-    #### **5. 个人思考与启发 (Personal Thoughts & Takeaways)**
-    *   **亮点 (Strengths):** 思路巧妙？实验扎实？
-    *   **局限性/可改进之处 (Weaknesses / Future Work):** 潜在问题或未来方向。
-    *   **对我的启发 (Inspiration for Me):** 方法、思路能否应用到我自己的研究中？
+    #### 5. 个人思考与启发
+
+    **亮点**
+    思路巧妙？实验扎实？
+
+    **局限性与未来方向**
+    潜在问题或未来可以改进的方向。
+
+    **启发**
+    方法、思路能否应用到我自己的研究中？
 
     ---
     
-    **写作要求:**
-    1. **全中文书写** (专有名词如 RLHF, Transformer 可保留英文)。
-    2. **拒绝翻译腔**: 不要写 "长期规划 (long-horizon planning)"，直接写 "长期规划" 或 "Long-Horizon Planning"。
-    3. **深度总结**: 不要只翻译摘要，要根据摘要内容进行合理的逻辑推演和扩展。
+    **写作要求**:
+    1. 全中文书写，专有名词如 RLHF、Transformer 可保留英文。
+    2. 拒绝翻译腔，直接写中文或英文术语，不要中英文混用括号。
+    3. 深度总结，不要只翻译摘要，要根据摘要内容进行合理的逻辑推演和扩展。
     """
     
     user_input = f"""

@@ -42,8 +42,13 @@ def process_single_paper(args):
         
     short_title = utils.sanitize_filename(meta['title'])[:40]
     first_author = utils.sanitize_filename(meta['authors'][0])
+    paper_subdir_name = f"{first_author}_{short_title}"
+    paper_dir = os.path.join(category_dir, paper_subdir_name)
+    if not os.path.exists(paper_dir):
+        os.makedirs(paper_dir, exist_ok=True)
+
     filename = f"{first_author}_{short_title}.pdf"
-    pdf_path = os.path.join(category_dir, filename)
+    pdf_path = os.path.join(paper_dir, filename)
     
     # 下载PDF
     utils.download_pdf(arxiv_id, pdf_path)

@@ -61,8 +61,11 @@ def pdf_to_images(pdf_path: str, output_dir: str, dpi: int = None) -> List[str]:
     
     print(f"  📄 PDF转图片: {os.path.basename(pdf_path)}")
     
-    # 禁用MuPDF的警告输出
-    fitz.set_messages_enabled(False)
+    # 尝试禁用MuPDF的警告输出（兼容不同版本）
+    try:
+        fitz.set_messages_enabled(False)
+    except AttributeError:
+        pass  # 某些PyMuPDF版本不支持此方法
     
     doc = fitz.open(pdf_path)
     total_pages = len(doc)
@@ -157,7 +160,11 @@ def process_single_page(args):
     if not ocr_text:
         return None
     
-    ocr_items = parse_ocr_response(ocr_text)
+    try:
+        ocr_items = parse_ocr_response(ocr_text)
+    except Exception as e:
+        print(f"     ⚠️ 第 {page_num} 页OCR解析失败: {e}")
+        return None
     
     # 保存OCR文本
     ocr_txt_path = os.path.join(ocr_dir, f"page_{page_num:03d}.txt")
@@ -166,13 +173,19 @@ def process_single_page(args):
     
     # 可视化
     if save_viz:
-        vis_path = os.path.join(ocr_dir, f"page_{page_num:03d}_vis.png")
-        visualize_ocr_result(image_path, ocr_items, vis_path)
+        try:
+            vis_path = os.path.join(ocr_dir, f"page_{page_num:03d}_vis.png")
+            visualize_ocr_result(image_path, ocr_items, vis_path)
+        except Exception as e:
+            print(f"     ⚠️ 第 {page_num} 页可视化失败: {e}")
     
     # 提取关键图表
     page_figures = []
     if save_cropped:
-        page_figures = extract_key_figures(ocr_items, image_path, figures_dir, page_num)
+        try:
+            page_figures = extract_key_figures(ocr_items, image_path, figures_dir, page_num)
+        except Exception as e:
+            print(f"     ⚠️ 第 {page_num} 页图表提取失败: {e}")
     
     print(f"     ✓ 第 {page_num} 页OCR完成")
     
@@ -309,6 +322,11 @@ def extract_key_figures(ocr_items: List[Dict], image_path: str,
                 caption = ocr_items[j]['text']
                 break
         
+        # 清理caption中的HTML标签
+        import re
+        caption = re.sub(r'<[^>]+>', '', caption)
+        caption = re.sub(r'\s+', ' ', caption).strip()
+        
         ext = 'fig' if label in ['image', 'figure'] else 'table'
         crop_path = os.path.join(figures_dir, f"{ext}_p{page_num:03d}_{i+1:02d}.png")
         crop_region(image_path, item['bbox'], crop_path)
@@ -346,7 +364,7 @@ def analyze_paper_content(ocr_results: List[Dict]) -> Tuple[Dict, Dict]:
     if len(all_text) > max_length:
         all_text = all_text[:max_length] + "\n... (内容已截断)"
     
-    prompt = f"""你是一个专业的学术论文分析助手。请分析以下论文的OCR内容，提取关键信息。
+    prompt = f"""你是一个专业的学术论文分析助手。请仔细分析以下论文的OCR内容，提取关键信息。
 
 论文内容:
 {all_text}
@@ -358,18 +376,31 @@ def analyze_paper_content(ocr_results: List[Dict]) -> Tuple[Dict, Dict]:
     "authors": ["作者1", "作者2"],
     "abstract": "摘要内容",
     "core_problem": "核心问题描述，用1-2句话概括",
-    "core_contribution": "核心贡献，分点列出",
-    "method_summary": "方法概述，包含关键技术创新",
-    "key_figures_description": ["图1描述: 这是什么图，展示了什么", "图2描述: ..."],
-    "key_results": "主要实验结果",
+    "core_contribution": ["核心贡献1", "核心贡献2", "核心贡献3"],
+    "method_summary": "方法概述（详细版，300-500字）：
+        - 整体思路：论文解决问题的核心思路是什么
+        - 关键技术：具体使用了哪些技术或方法
+        - 创新点：相比现有方法有什么创新
+        - 实现细节：关键的实现细节或算法流程",
+    "key_figures_description": [
+        "图1: 架构图/概览图 - 用中文描述这张图展示了什么框架或系统",
+        "图2: 实验结果图 - 用中文描述这张图展示了什么实验结果或对比"
+    ],
+    "key_results": "主要实验结果（200-300字）：在哪些数据集上做了实验，性能如何提升，与基线方法的对比",
     "key_tables": ["表1: 描述表格内容和关键数据"],
-    "conclusion": "结论"
+    "conclusion": "结论（100-200字）：论文的主要贡献和意义",
+    "pros": ["论文亮点1", "论文亮点2"],
+    "cons": ["局限性1", "局限性2"],
+    "inspirations": ["对未来研究或实践的启发1", "启发2"]
 }}
 
 注意：
 1. 返回必须是有效的JSON格式
 2. 所有描述使用中文
-3. 对图表的描述要详细，说明其用途和展示的内容
+3. method_summary要详细，分点说明整体思路、关键技术、创新点、实现细节
+4. key_figures_description中的描述要用中文重新组织，不要直接复制OCR识别的英文原文
+5. 对图表的描述要详细，说明其用途和展示的内容
+6. pros, cons, inspirations 必须根据论文内容给出具体的分析，不要留空。
 """
     
     for attempt in range(max_retries):
@@ -439,6 +470,7 @@ def select_key_figures_for_report(all_figures: List[Dict], analysis: Dict) -> Li
             result_figures.append(fig)
     
     # 选择：1-2张架构图，1-2张结果图，1张表格
+    # 如果某类没有，从其他类补充
     selected.extend(arch_figures[:2])
     selected.extend(result_figures[:2])
     selected.extend(tables[:1])
@@ -447,7 +479,7 @@ def select_key_figures_for_report(all_figures: List[Dict], analysis: Dict) -> Li
     remaining = [f for f in all_figures if f not in selected]
     selected.extend(remaining[:max_figures - len(selected)])
     
-    # 添加LLM分析描述
+    # 添加LLM分析描述 - 按顺序匹配
     figure_descriptions = analysis.get('key_figures_description', [])
     for i, fig in enumerate(selected):
         if i < len(figure_descriptions):
@@ -484,53 +516,80 @@ def generate_paper_note(paper_info: Dict, analysis: Dict, selected_figures: List
     md_content += "\n"
     
     md_content += "## 方法概述\n\n"
-    md_content += f"{analysis.get('method_summary', '未提取')}\n\n"
+    method_summary = analysis.get('method_summary', '未提取')
+    md_content += f"{method_summary}\n\n"
     
-    # 融入架构图
+    # 融入架构图（在方法概述后）
     arch_figures = [f for f in selected_figures if f['type'] in ['image', 'figure'] and 
-                   any(kw in f.get('caption', '').lower() for kw in ['arch', 'framework', 'overview', 'model', 'structure'])]
+                   any(kw in f.get('caption', '').lower() for kw in ['arch', 'framework', 'overview', 'model', 'structure', 'pipeline', 'system'])]
     if arch_figures:
-        md_content += "### 架构图\n\n"
+        md_content += "**架构图**\n\n"
         for fig in arch_figures[:2]:
-            rel_path = os.path.basename(fig['crop_path'])
-            desc = fig.get('analysis_desc', fig.get('caption', ''))
+            abs_path = os.path.abspath(fig['crop_path'])
+            desc = fig.get('analysis_desc', '')
             if desc:
                 md_content += f"{desc}\n\n"
-            md_content += f"![架构图]({rel_path})\n\n"
+            md_content += f"![架构图](file://{abs_path})\n\n"
+    
+    md_content += "---\n\n"
     
     md_content += "## 实验结果\n\n"
     md_content += f"{analysis.get('key_results', '未提取')}\n\n"
     
     # 融入结果图和表格
     result_figures = [f for f in selected_figures if 
-                     (f['type'] in ['image', 'figure'] and any(kw in f.get('caption', '').lower() for kw in ['result', 'performance', 'comparison', 'ablation'])) or
+                     (f['type'] in ['image', 'figure'] and any(kw in f.get('caption', '').lower() for kw in ['result', 'performance', 'comparison', 'ablation', 'accuracy', 'loss', 'curve', 'plot'])) or
                      f['type'] == 'table']
     
     if result_figures:
-        md_content += "### 实验数据\n\n"
+        md_content += "**实验数据**\n\n"
         for fig in result_figures[:3]:
-            rel_path = os.path.basename(fig['crop_path'])
+            abs_path = os.path.abspath(fig['crop_path'])
             caption = fig.get('caption', '')
             desc = fig.get('analysis_desc', '')
             
             if fig['type'] == 'table':
-                md_content += f"**{caption or '数据表'}**\n\n"
+                md_content += f"{caption or '数据表'}\n\n"
             else:
-                md_content += f"**{caption or '结果图'}**\n\n"
+                md_content += f"{caption or '结果图'}\n\n"
             
             if desc:
                 md_content += f"{desc}\n\n"
             
-            md_content += f"![{caption}]({rel_path})\n\n"
+            md_content += f"![{caption}](file://{abs_path})\n\n"
     
+    md_content += "---\n\n"
     md_content += "## 结论\n\n"
     md_content += f"{analysis.get('conclusion', '未提取')}\n\n"
     
     md_content += "---\n\n"
     md_content += "## 个人思考\n\n"
-    md_content += "### 亮点\n\n- \n\n"
-    md_content += "### 局限性\n\n- \n\n"
-    md_content += "### 启发\n\n- \n\n"
+    md_content += "### 亮点\n\n"
+    pros = analysis.get('pros', [])
+    if isinstance(pros, list):
+        for item in pros:
+            md_content += f"- {item}\n"
+    else:
+        md_content += f"{pros}\n"
+    md_content += "\n"
+    
+    md_content += "### 局限性\n\n"
+    cons = analysis.get('cons', [])
+    if isinstance(cons, list):
+        for item in cons:
+            md_content += f"- {item}\n"
+    else:
+        md_content += f"{cons}\n"
+    md_content += "\n"
+    
+    md_content += "### 启发\n\n"
+    inspirations = analysis.get('inspirations', [])
+    if isinstance(inspirations, list):
+        for item in inspirations:
+            md_content += f"- {item}\n"
+    else:
+        md_content += f"{inspirations}\n"
+    md_content += "\n"
     
     md_content += "---\n\n"
     md_content += "## 处理记录\n\n"
@@ -603,7 +662,7 @@ def analyze_paper_deep(pdf_path: str, paper_info: Dict, category_dir: str) -> Di
             print("  ❌ PDF转换失败")
             return None
         
-        if len(image_paths) > max_pages:
+        if max_pages is not None and len(image_paths) > max_pages:
             print(f"  ⚠️ 论文共 {len(image_paths)} 页，只处理前 {max_pages} 页")
             image_paths = image_paths[:max_pages]
         
@@ -620,11 +679,14 @@ def analyze_paper_deep(pdf_path: str, paper_info: Dict, category_dir: str) -> Di
         with ThreadPoolExecutor(max_workers=ocr_workers) as executor:
             futures = {executor.submit(process_single_page, task): task for task in tasks}
             for future in as_completed(futures):
+                task = futures[future]  # 获取当前future对应的task
                 result = future.result()
-                if result:
+                if result and isinstance(result, dict):
                     ocr_results.append(result)
                     all_key_figures.extend(result.get('figures', []))
-        
+                elif result:
+                    print(f"     ⚠️ 第 {task[0]+1} 页返回格式错误: {type(result)}")
+
         # 按页码排序
         ocr_results.sort(key=lambda x: x['page'])
     

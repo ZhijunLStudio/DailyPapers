@@ -35,7 +35,7 @@ analysis:
   # PDF转图片的分辨率，越高越清晰但处理越慢
   pdf_dpi: 200
   # 每篇论文最多处理多少页（防止太长论文占用过多资源）
-  max_pages: 15
+  max_pages: 20
   # 是否保存OCR可视化结果
   save_visualization: true
   # 是否保存裁剪的图表

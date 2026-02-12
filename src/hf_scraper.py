@@ -56,12 +56,34 @@ def get_daily_papers(date_str=None):
     
     try:
         resp = requests.get(url, **req_kwargs)
+    except requests.exceptions.ProxyError as e:
+        print(f"代理连接失败: {e}")
+        print("尝试不使用代理...")
+        req_kwargs.pop('proxies', None)
+        req_kwargs.pop('verify', None)
+        try:
+            resp = requests.get(url, **req_kwargs)
+        except Exception as e2:
+            print(f"无代理请求也失败: {e2}")
+            return []
+    except requests.exceptions.SSLError as e:
+        print(f"SSL错误: {e}")
+        print("尝试跳过SSL验证...")
+        req_kwargs['verify'] = False
+        try:
+            resp = requests.get(url, **req_kwargs)
+        except Exception as e2:
+            print(f"跳过SSL后仍失败: {e2}")
+            return []
     except Exception as e:
         print(f"请求失败: {e}")
         return []
     
     if resp.status_code != 200:
         print(f"无法访问 HuggingFace Papers (状态码: {resp.status_code})")
+        if resp.status_code == 400:
+            print(f"提示: 日期 {date_str} 可能无效或HuggingFace还没有该日期的数据")
+            print(f"尝试访问: https://huggingface.co/papers 查看最新论文")
         return []
 
     soup = BeautifulSoup(resp.text, 'html.parser')

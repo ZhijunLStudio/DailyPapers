@@ -7,3 +7,4 @@ arxiv
 tqdm
 pymupdf
 pillow
+rich

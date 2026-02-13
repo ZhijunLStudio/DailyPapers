@@ -49,14 +49,25 @@ analysis:
 
 # 并发配置
 concurrency:
-  # 同时处理多少篇论文（深度分析）
-  paper_workers: 2
+  # 同时处理多少篇论文（筛选阶段）
+  paper_workers: 4
   # 单篇论文内OCR并发数（同时处理多少页）
-  ocr_workers: 3
+  ocr_workers: 4
+  # LLM分析并发数（与OCR独立，实现流水线）
+  llm_workers: 4
+  # PDF下载并发数
+  pdf_workers: 10
   # arXiv元数据获取批次大小
   arxiv_chunk_size: 10
   # arXiv请求间隔（秒）
   arxiv_delay: 3
+
+# 批次汇总配置
+batch_summary:
+  # 每批汇总的论文数量
+  batch_size: 10
+  # 是否启用批次汇总
+  enabled: true
 
 # 筛选偏好 (用于 AI Prompt)
 # 用自然语言描述你的研究兴趣和想过滤的方向

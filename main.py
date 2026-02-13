@@ -82,27 +82,53 @@ async def process_paper_async(arxiv_id, meta, local_dir, target_date, skip_deep,
                 'arxiv_id': arxiv_id
             }
 
-            # 4.1 OCR阶段 - 独立信号量
+            # 4.1 OCR阶段 - 独立信号量，带重试机制
             progress.update(task_id, description=f"[magenta]📄 OCR识别: {meta['title'][:30]}...", advance=15)
-            async with ocr_sem:
-                ocr_result = await loop.run_in_executor(
-                    None,
-                    paper_analyzer.extract_ocr_only,
-                    pdf_path, paper_info, category_dir
-                )
+            ocr_result = None
+            max_ocr_retries = 2
+
+            for ocr_attempt in range(max_ocr_retries):
+                async with ocr_sem:
+                    ocr_result = await loop.run_in_executor(
+                        None,
+                        paper_analyzer.extract_ocr_only,
+                        pdf_path, paper_info, category_dir
+                    )
+
+                if ocr_result is not None:
+                    if ocr_attempt > 0:
+                        print(f"   ✅ OCR成功 (第{ocr_attempt + 1}次尝试): {meta['title'][:40]}...")
+                    break
+                else:
+                    print(f"   ⚠️  OCR失败 (尝试 {ocr_attempt + 1}/{max_ocr_retries}): {meta['title'][:40]}...")
+                    if ocr_attempt < max_ocr_retries - 1:
+                        await asyncio.sleep(2 * (ocr_attempt + 1))  # 递增延迟
 
             if ocr_result is None:
-                print(f"   ⚠️  {meta['title'][:40]}... OCR阶段失败，跳过LLM分析")
+                print(f"   ❌ OCR阶段最终失败，跳过LLM分析: {meta['title'][:40]}...")
                 deep_analysis_result = None
             else:
-                # 4.2 LLM分析阶段 - 独立信号量，可以与OCR同时进行
+                # 4.2 LLM分析阶段 - 独立信号量，带重试机制
                 progress.update(task_id, description=f"[magenta]🧠 LLM分析: {meta['title'][:30]}...", advance=15)
-                async with llm_sem:
-                    deep_analysis_result = await loop.run_in_executor(
-                        None,
-                        paper_analyzer.analyze_with_llm,
-                        ocr_result, paper_info, category_dir
-                    )
+                deep_analysis_result = None
+                max_llm_retries = 2
+
+                for llm_attempt in range(max_llm_retries):
+                    async with llm_sem:
+                        deep_analysis_result = await loop.run_in_executor(
+                            None,
+                            paper_analyzer.analyze_with_llm,
+                            ocr_result, paper_info, category_dir
+                        )
+
+                    if deep_analysis_result is not None:
+                        if llm_attempt > 0:
+                            print(f"   ✅ LLM分析成功 (第{llm_attempt + 1}次尝试): {meta['title'][:40]}...")
+                        break
+                    else:
+                        print(f"   ⚠️  LLM分析失败 (尝试 {llm_attempt + 1}/{max_llm_retries}): {meta['title'][:40]}...")
+                        if llm_attempt < max_llm_retries - 1:
+                            await asyncio.sleep(2 * (llm_attempt + 1))
         
         # 5. 上传 Zotero & 笔记
         progress.update(task_id, description=f"[green]📤 上传中: {meta['title'][:30]}...", advance=30)
